@@ -1,0 +1,290 @@
+pip install faker
+from faker import Faker
+import random
+from datetime import datetime, timedelta
+import csv
+print("Done")
+# Create a Faker instance
+fake = Faker()
+# Generate synthetic data
+def generate_synthetic_data(num_entries):
+    synthetic_data = []
+    for _ in range(num_entries):
+        # Generate random date within the last year
+        transaction_date = fake.date_between(start_date='-1y', end_date='today')
+        # Generate item purchased
+        item_purchased = fake.word()
+        # Generate random unit price
+        unit_price = round(random.uniform(1, 1000), 2)
+        # Generate random tax amount
+        tax = round(random.choice([0.1, 0.3]),2)
+        # Calculate transaction amount
+        transaction_amount = round(unit_price + (unit_price * (tax / 100)), 2)
+        # Generate random transaction mode
+        transaction_mode = random.choice(['Cash', 'Credit Card', 'Debit Card'])
+        # Generate random transaction currency
+        transaction_currency = random.choice(['USD', 'INR'])
+        # Append data to the synthetic data list
+        synthetic_data.append([
+        transaction_date.strftime('%Y-%m-%d'),
+        item_purchased,
+        unit_price,
+        tax,
+        transaction_amount,
+        transaction_mode,
+        transaction_currency
+        ])
+    return synthetic_data
+
+# Number of synthetic data points to generate
+num_entries = 10000
+# Generate synthetic data
+synthetic_data = generate_synthetic_data(num_entries)
+# Write synthetic data to a CSV file
+output_file = 'synthetic_data.csv'
+with open(output_file, 'w', newline='') as csvfile:
+    writer = csv.writer(csvfile)
+    writer.writerows(['Date of Transaction', 'Item Purchased', 'Unit Price', 'Tax', 'Transaction Amount', 'Transaction Mode', 'Transaction Currency'])
+    writer.writerows(synthetic_data)
+print(f"Synthetic data written to {output_file}")
+# # Print synthetic data
+# for idx, entry in enumerate(synthetic_data, start=1):
+    # print(f"Entry {idx}: {entry}")
+
+import pandas as pd
+from scipy.stats import zscore
+
+# Read CSV file into a DataFrame
+df = pd.read_csv(r'C:\Users\saibal\synthetic_data.csv')
+print(df)
+ 
+null_transaction_amount = df[df.columns[4]].isnull().sum()
+print(null_transaction_amount)
+ 
+null_transaction_amount = df['Transaction Amount'].isnull().sum()
+null_tax = df['Tax'].isnull().sum()
+print("Null values in Transaction Amount field:", null_transaction_amount) 
+print("Null values in Tax field:", null_tax)
+ 
+# Replace null values in 'Transaction Amount' field with mean
+mean_transaction_amount = df['Transaction Amount'].mean()
+df['Transaction Amount'].fillna(mean_transaction_amount, inplace=True)
+ 
+# Rectify date format in 'Date of Transaction' field
+df['Date of Transaction'] = pd.to_datetime(df['Date of Transaction'], errors='coerce')
+
+# Drop rows containing null values in 'Tax' column
+df.dropna(subset=['Tax'], inplace=True)
+
+# Dealing with outliers using Z-Score
+z_scores = zscore(df['Transaction Amount'])
+abs_z_scores = abs(z_scores)
+filtered_entries = (abs_z_scores < 3)
+df = df[filtered_entries]
+
+# Display the updated DataFrame
+print("\nUpdated DataFrame:")
+print(df)
+
+df.to_csv(r'C:\Users\saibal\Updated_Transaction.csv', index=False)
+-----------------------------------------------------------------
+
+import pandas as pd
+from sklearn.preprocessing import OneHotEncoder, LabelEncoder
+
+# Load the dataset
+df = pd.read_csv(r'C:\Users\saibal\Updated_Transaction1.csv')
+
+# Initialize the encoders
+one_hot_encoder = OneHotEncoder()
+label_encoder = LabelEncoder()
+
+# Apply Label Encoder to 'currency'
+df['currency'] = label_encoder.fit_transform(df['currency'])
+
+# Apply One Hot Encoder to 'item' and 'mode'
+# The One Hot Encoder expects a 2D array, hence reshape(-1, 1)
+item_encoded = one_hot_encoder.fit_transform(df['item'].values.reshape(-1, 1)).toarray()
+mode_encoded = one_hot_encoder.fit_transform(df['mode'].values.reshape(-1, 1)).toarray()
+
+# Create dataframe from the encoded features and assign column names
+item_df = pd.DataFrame(item_encoded, columns=[f"item_{int(i)}" for i in range(item_encoded.shape[1])])
+mode_df = pd.DataFrame(mode_encoded, columns=[f"mode_{int(i)}" for i in range(mode_encoded.shape[1])])
+
+# Drop the original 'item' and 'mode' columns
+df.drop(['mode'], axis=1, inplace=True)
+
+# Concatenate the original dataframe with the new one hot encoded dataframes
+df = pd.concat([df, item_df, mode_df], axis=1)
+
+# The dataframe is now preprocessed and ready for training
+print(df.head())
+
+# Save the preprocessed data if needed
+df.to_csv('Preprocessed_Transaction1.csv', index=False)
+----------------------------------------------------------------------
+import pandas as pd
+from sklearn.model_selection import train_test_split
+
+# Load preprocessed POS transaction data
+data = pd.read_csv(r'C:\Users\HP\Desktop\Saibal Personal Documents\Preprocessed_Transaction.csv')
+
+# Assuming your data has columns: 'Transaction_Date', 'Item', 'Unit_Purchase', 'Tax', 'Transaction_Amount', 'Currency'
+
+# Split data into features and target variable
+X = data.drop(columns=['amount'])  # Features
+y = data['amount']  # Target variable
+
+# Split data into training and testing sets (80% train, 20% test)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Optionally, if you want to save the split datasets to CSV files
+X_train.to_csv('pos_train_features.csv', index=False)
+X_test.to_csv('pos_test_features.csv', index=False)
+y_train.to_csv('pos_train_target.csv', index=False)
+y_test.to_csv('pos_test_target.csv', index=False)
+-----------------------------------------------------------------------------------------------------------
+In machine learning, the target variable, also known as the dependent variable or response variable, is the variable that you want to predict or explain using other variables, which are called features or independent variables.
+
+In the context of splitting data into training and testing sets, the target variable refers to the variable you're trying to predict or model.
+
+For example, in a regression problem where you're trying to predict the transaction amount based on transaction date, item, unit purchase, and tax, the transaction amount would be the target variable.
+
+When splitting data into training and testing sets, you typically divide both the features (input variables) and the target variable into separate sets. The training set is used to train the model, while the testing set is used to evaluate its performance.
+
+------------------------------------------------------------------------------------------------------------------------
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error
+
+# Load your dataset (replace with actual data)
+file_path = 'C:\\Users\\saibal\\Preprocessed_Transaction1.csv'
+df = pd.read_csv(file_path)
+
+# Feature engineering (extract day of the week, month, etc.)
+df['DayOfWeek'] = pd.to_datetime(df['Date of Transaction']).dt.dayofweek
+df['Month'] = pd.to_datetime(df['Date of Transaction']).dt.month
+
+# Split data into training and testing sets
+X = df[['DayOfWeek', 'Month']]
+y = df['amount']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train a simple linear regression model
+model = LinearRegression()
+model.fit(X_train, y_train)
+
+# Make predictions
+y_pred = model.predict(X_test)
+
+# Evaluate model performance
+mae = mean_absolute_error(y_test, y_pred)
+print(f'Mean Absolute Error: {mae:.2f}')
+
+# Forecast demand for new data (e.g., future transaction records)
+# You can use the trained model to predict 'amount' for specific dates.
+
+# Assuming you have new data (e.g., future dates) for forecasting
+new_dates = pd.date_range(start='2024-04-17', periods=100, freq='D')
+new_features = pd.DataFrame({
+    'DayOfWeek': new_dates.dayofweek,
+    'Month': new_dates.month
+})
+
+# Predict the demand for the new dates
+forecasted_amounts = model.predict(new_features)
+
+# Create a new DataFrame with forecasted results
+forecast_df = pd.DataFrame({
+    'Date of Transaction': new_dates,
+    'amount': forecasted_amounts
+})
+
+# Write the forecasted results to a new CSV file
+forecast_df.to_csv('forecasted_result2.csv', index=False)
+print("Forecasted results saved to 'forecasted_results.csv'")
+
+# Optionally, if you want to save the split datasets to CSV files
+X_train.to_csv('pos_train_features1.csv', index=False)
+X_test.to_csv('pos_test_features2.csv', index=False)
+y_train.to_csv('pos_train_target3.csv', index=False)
+y_test.to_csv('pos_test_target4.csv', index=False)
+--------------------------------------------------------------------------------------------------------
+Mean Absolute Error: 250.70
+Forecasted results saved to 'forecasted_results.csv'
+
+--------------------------------------------------------------------------------------------------------
+import pandas as pd
+from sklearn.model_selection import train_test_split
+# from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error
+
+# Load your dataset (replace with actual data)
+df = pd.read_csv(r'C:\Users\HP\Desktop\Saibal Personal Documents\Preprocessed_Transaction.csv')
+# file_path = 'C:\Users\HP\Desktop\Saibal Personal Documents\Preprocessed_Transaction.csv'
+# df = pd.read_csv(file_path)
+
+# Feature engineering (extract day of the week, month, etc.)
+df['DayOfWeek'] = pd.to_datetime(df['Date of Transaction']).dt.dayofweek
+df['Month'] = pd.to_datetime(df['Date of Transaction']).dt.month
+
+# Split data into training and testing sets
+X = df[['DayOfWeek', 'Month']]
+y = df['amount']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train a simple linear regression model
+# model = LinearRegression()
+# model.fit(X_train, y_train)
+
+# Train a Random Forest regression model
+model = RandomForestRegressor(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+
+# Make predictions
+y_pred = model.predict(X_test)
+
+# Evaluate model performance
+mae = mean_absolute_error(y_test, y_pred)
+print(f'Mean Absolute Error: {mae:.2f}')
+
+# Forecast demand for new data (e.g., future transaction records)
+# You can use the trained model to predict 'amount' for specific dates.
+
+# Assuming you have new data (e.g., future dates) for forecasting
+new_dates = pd.date_range(start='2024-04-17', periods=100, freq='D')
+new_features = pd.DataFrame({
+    'DayOfWeek': new_dates.dayofweek,
+    'Month': new_dates.month
+})
+
+# Predict the demand for the new dates
+forecasted_amounts = model.predict(new_features)
+
+# Create a new DataFrame with forecasted results
+forecast_df = pd.DataFrame({
+    'Date of Transaction': new_dates,
+    'amount': forecasted_amounts
+})
+
+# Write the forecasted results to a new CSV file
+forecast_df.to_csv('forecasted_result1.csv', index=False)
+print("Forecasted results saved to 'forecasted_result1.csv'")
+
+--------------------------------------------------------------------------------------------------------------------------------
+Mean Absolute Error: 257.29
+Forecasted results saved to 'forecasted_result1.csv'
+--------------------------------------------------------------------------------------------------------------------------Gradient Descent Algorithm gives optimum values of m and c of the linear regression equation. With these values of m and c, we will get the equation of the best-fit line and ready to make predictions.
+
+The cost is the error in our predicted value. We will use the Mean Squared Error function to calculate the cost.
+
+Our goal is to minimize the cost as much as possible in order to find the best fit line.
+
+Learning rate gives the rate of speed where the gradient moves during gradient descent. Setting it too high would make your path instable, too low would make convergence slow. Put it to zero means your model isn’t learning anything from the gradients.
+
+
+
